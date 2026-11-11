@@ -19,11 +19,21 @@ from datetime import date, datetime
 
 REVIEW_INTERVAL_DAYS = 7
 
+CONFIG_OVERRIDE = []  # 由 CLI --config 注入
+
+
+def config_path() -> str:
+    if CONFIG_OVERRIDE:
+        return CONFIG_OVERRIDE[-1]
+    if os.environ.get("STUDY_NOTES_CONFIG"):
+        return os.environ["STUDY_NOTES_CONFIG"]
+    return os.path.expanduser("~/.config/study-notes/config.json")
+
 
 def _paths() -> tuple[str, str]:
     cfg = {}
     try:
-        with open(os.path.expanduser("~/.config/study-notes/config.json"), encoding="utf-8") as f:
+        with open(config_path(), encoding="utf-8") as f:
             cfg = json.load(f)
     except Exception:
         pass
@@ -50,7 +60,14 @@ def main() -> int:
     if len(sys.argv) < 2:
         print(__doc__)
         return 1
-    cmd = sys.argv[1]
+    args = sys.argv[1:]
+    if "--config" in args:
+        i = args.index("--config")
+        if i + 1 < len(args):
+            CONFIG_OVERRIDE.append(args[i + 1])
+            args = args[:i] + args[i + 2:]
+    sys.argv = [sys.argv[0]] + args
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     state, _ = _paths()
     data = _load(state)
 

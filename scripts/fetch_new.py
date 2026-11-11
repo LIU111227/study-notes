@@ -29,7 +29,13 @@ MSG_CHAR_CAP = 4000    # 单条消息截断上限
 
 # ---------------------------------------------------------------- state/config
 
+CONFIG_OVERRIDE = []  # 由 CLI --config 注入
+
 def config_path() -> str:
+    if CONFIG_OVERRIDE:
+        return CONFIG_OVERRIDE[-1]
+    if os.environ.get("STUDY_NOTES_CONFIG"):
+        return os.environ["STUDY_NOTES_CONFIG"]
     return os.path.expanduser("~/.config/study-notes/config.json")
 
 
@@ -154,7 +160,72 @@ def _dt_get(path: str) -> dict:
         return json.loads(r.read().decode("utf-8"))
 
 
+def _dt_db_path() -> str:
+    """DeepTutor 工作区私有会话库：exec 的 cwd 即工作区根。"""
+    for base in (os.getcwd(), os.environ.get("DEEPTUTOR_WORKSPACE_ROOT", "")):
+        if not base:
+            continue
+        p = os.path.join(base, ".deeptutor", "data", "user", "chat_history.db")
+        if os.path.exists(p):
+            return p
+    return ""
+
+
+def _dt_from_db(cursor: str, max_chars: int, session_id: str | None) -> dict | None:
+    """直接只读查询工作区 sqlite（比 HTTP API 可靠：无需鉴权头/作用域）。"""
+    db = _dt_db_path()
+    if not db:
+        return None
+    import sqlite3
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except Exception:
+        return None
+    try:
+        if not session_id:
+            row = con.execute(
+                "select id, title from sessions order by updated_at desc limit 1"
+            ).fetchone()
+            if row is None:
+                return {"error": "no_sessions", "detail": "DeepTutor 工作区还没有任何会话"}
+            session_id, title = row[0], row[1] or ""
+        else:
+            row = con.execute(
+                "select id, title from sessions where id=?", (session_id,)
+            ).fetchone()
+            if row is None:
+                return {"error": "session_not_found", "detail": session_id}
+            title = row[1] or ""
+        msgs = []
+        for mid, role, content in con.execute(
+            "select id, role, content from messages where session_id=? order by id",
+            (session_id,),
+        ):
+            if role not in ("user", "assistant") or not isinstance(content, str):
+                continue
+            content = content.strip()
+            if not content or content.startswith("<"):
+                continue
+            msgs.append({"role": role, "text": content, "id": str(mid), "ts": ""})
+        idx = -1
+        if cursor:
+            for i, m in enumerate(msgs):
+                if m["id"] == cursor:
+                    idx = i
+                    break
+        overlap = msgs[max(0, idx - OVERLAP_N + 1): idx + 1] if idx >= 0 else []
+        new = msgs[idx + 1:] if idx >= 0 else msgs
+        return _pack("deeptutor", session_id, title, overlap, new, max_chars)
+    except Exception:
+        return None
+    finally:
+        con.close()
+
+
 def fetch_deeptutor(a_cursor: str, max_chars: int, session_id: str | None) -> dict:
+    direct = _dt_from_db(a_cursor, max_chars, session_id)
+    if direct is not None:
+        return direct
     cursor = a_cursor
     try:
         listing = _dt_get("/api/sessions")
@@ -240,7 +311,10 @@ def main() -> int:
     ap.add_argument("--session-id")
     ap.add_argument("--cursor")
     ap.add_argument("--max-chars", type=int, default=24000)
+    ap.add_argument("--config", help="显式配置文件路径（沙箱 HOME 不可靠时用）")
     a = ap.parse_args()
+    if a.config:
+        CONFIG_OVERRIDE.append(a.config)
 
     agent = detect_agent(a.agent)
     if agent is None:

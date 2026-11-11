@@ -16,19 +16,21 @@ requires:
 
 ## 0. 前置：定位脚本与配置
 
-本 skill 自带脚本。用你的 shell/执行工具按顺序探测脚本目录（记为 `SKILL_DIR`）：
+本 skill 自带脚本。用你的 shell/执行工具按顺序探测 skill 目录（记为 `SKILL_DIR`）：
 
-1. 本次 skill 加载时声明的 base directory 下的 `scripts/`
-2. `~/.claude/skills/study-notes/scripts/`
-3. 当前工作区下的 `skills/study-notes/scripts/`（DeepTutor 工作区）
+1. **DeepTutor**：工作区根下的 `skills/study-notes/`（exec 的当前目录就是工作区根，
+   直接用相对路径 `skills/study-notes/scripts/xxx.py`）
+2. **Claude Code**：本次 skill 加载时声明的 base directory
+3. `~/.claude/skills/study-notes/`
 
-配置三层（优先级从高到低）：
+⚠️ **沙箱环境的 HOME 不可靠**（DeepTutor exec 的 HOME 不是用户家目录）。所以：
 
-1. **用户本次调用时随口指定**的目标（如"把笔记记到 XX"→ 本次生效，不写盘）
-2. **全局配置文件** `~/.config/study-notes/config.json`（字段：`vault` = Obsidian 仓库路径、
-   `default_subject` = 默认学科目录名）
-3. 配置不存在 → **首次引导**：问用户两个问题（vault 路径？学科目录名？），然后运行
-   `python3 SKILL_DIR/notes_io.py init-config --vault <路径> --subject <学科>` 完成初始化
+- 运行任何脚本时**必须显式传配置**：`--config <SKILL_DIR>/config.json`
+- `<SKILL_DIR>/config.json` 已随 skill 携带（内容：vault 绝对路径 + 学科名）；
+  读它拿到 vault 路径（Obsidian 仓库，绝对路径，沙箱可直接读写）
+- 首次引导改用：`python3 <SKILL_DIR>/scripts/notes_io.py init-config --config <SKILL_DIR>/config.json --vault <绝对路径> --subject <学科>`
+
+配置优先级：用户随口指定 > `<SKILL_DIR>/config.json` > `~/.config/study-notes/config.json`（仅 Claude Code 侧使用）
 
 ---
 
@@ -37,7 +39,7 @@ requires:
 ### 第 1 步：拉取本会话新消息
 
 ```bash
-python3 SKILL_DIR/fetch_new.py
+python3 SKILL_DIR/scripts/fetch_new.py --config SKILL_DIR/config.json
 ```
 
 脚本自动探测宿主（DeepTutor → 读本地 API；Claude Code → 读本项目 transcript），
@@ -52,7 +54,7 @@ python3 SKILL_DIR/fetch_new.py
 ### 第 2 步：判断是否触发每周审查
 
 ```bash
-python3 SKILL_DIR/notes_state.py review-due
+python3 SKILL_DIR/scripts/notes_state.py --config SKILL_DIR/config.json review-due
 ```
 
 `due: true`（距上次全量审查 > 7 天）→ **先执行流程 C（审查），再回来继续**。
@@ -80,7 +82,7 @@ python3 SKILL_DIR/notes_state.py review-due
 - 写完后立即推进游标（**必须**，否则下次重复处理）：
 
 ```bash
-python3 SKILL_DIR/notes_state.py set-cursor <agent>:<session_id> <cursor>
+python3 SKILL_DIR/scripts/notes_state.py --config SKILL_DIR/config.json set-cursor <agent>:<session_id> <cursor>
 ```
 
 ### 第 6 步：汇报（一段话以内）
@@ -112,7 +114,7 @@ python3 SKILL_DIR/notes_state.py set-cursor <agent>:<session_id> <cursor>
 4. 完成后必须记录：
 
 ```bash
-python3 SKILL_DIR/notes_state.py mark-reviewed
+python3 SKILL_DIR/scripts/notes_state.py --config SKILL_DIR/config.json mark-reviewed
 ```
 
 ---
