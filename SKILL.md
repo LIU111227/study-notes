@@ -18,8 +18,10 @@ requires:
 
 本 skill 自带脚本。用你的 shell/执行工具按顺序探测 skill 目录（记为 `SKILL_DIR`）：
 
-1. **DeepTutor**：工作区根下的 `skills/study-notes/`（exec 的当前目录就是工作区根，
-   直接用相对路径 `skills/study-notes/scripts/xxx.py`）
+1. **DeepTutor**：本工作区的 `skills/study-notes/`。⚠️ 两个陷阱：
+   - exec 的当前目录**不是**工作区根（是 outputs/chat/.../exec 深层目录）——先从本回合
+     "User workspace" 说明里拿到工作区根的**绝对路径**，所有命令用绝对路径
+   - 不要用符号链接装本 skill（workspace_read 会以"路径离开工作区"拒绝读取）
 2. **Claude Code**：本次 skill 加载时声明的 base directory
 3. `~/.claude/skills/study-notes/`
 
